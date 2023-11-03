@@ -1,9 +1,5 @@
 use hex::{FromHex, ToHex};
 use serde::{de::Deserializer, ser::Serializer, Deserialize, Serialize};
-use uuid::Uuid;
-
-#[cfg(feature = "geth-compat")]
-use ethereum_types::H160 as Address;
 
 #[derive(Debug, Deserialize, Serialize)]
 /// This struct represents the deserialized form of an encrypted JSON keystore based on the
@@ -116,8 +112,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
 
-    #[cfg(not(feature = "geth-compat"))]
     #[test]
     fn test_deserialize_pbkdf2() {
         // Test vec from: https://eips.ethereum.org/EIPS/eip-2335

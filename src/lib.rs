@@ -23,10 +23,6 @@ use std::{
 
 mod error;
 mod keystore;
-mod utils;
-
-#[cfg(feature = "geth-compat")]
-use utils::geth_compat::address_from_pk;
 
 pub use error::KeystoreError;
 pub use keystore::{CipherparamsJson, CryptoJson, EthKeystore, KdfType, KdfparamsType};
@@ -67,12 +63,12 @@ where
     decrypt_keystore(&contents, password)
 }
 
-pub fn decrypt_keystore<S>(keystore_s: &String, password: S) -> Result<Vec<u8>, KeystoreError>
+pub fn decrypt_keystore<S>(keystore_s: &str, password: S) -> Result<Vec<u8>, KeystoreError>
 where
     S: AsRef<[u8]>,
 {
     // Deserialize keystore string
-    let keystore: EthKeystore = serde_json::from_str(&keystore_s)?;
+    let keystore: EthKeystore = serde_json::from_str(keystore_s)?;
 
     // Derive the key.
     let key = match keystore.crypto.kdf.params {
@@ -166,7 +162,7 @@ where
     };
 
     let bls_pk = bls_sk.sk_to_pk().compress();
-    let pubkey = hex::encode(&bls_pk);
+    let pubkey = hex::encode(bls_pk);
     // Generate a random salt.
     let mut salt = vec![0u8; DEFAULT_KEY_SIZE];
     rng.fill_bytes(salt.as_mut_slice());

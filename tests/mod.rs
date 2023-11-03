@@ -5,7 +5,6 @@ use std::path::Path;
 mod tests {
     use super::*;
 
-    #[cfg(not(feature = "geth-compat"))]
     #[test]
     fn test_decrypt_pbkdf2() {
         // Test vec from: https://eips.ethereum.org/EIPS/eip-2335
@@ -20,7 +19,6 @@ mod tests {
         assert!(decrypt_key(&keypath, "wrongtestpassword").is_err());
     }
 
-    #[cfg(not(feature = "geth-compat"))]
     #[test]
     fn test_decrypt_scrypt() {
         // Test vec from: https://eips.ethereum.org/EIPS/eip-2335
