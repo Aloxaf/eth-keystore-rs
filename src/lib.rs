@@ -1,6 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 //! A minimalist library to interact with encrypted JSON keystores as per the
-//! [Web3 Secret Storage Definition](https://github.com/ethereum/wiki/wiki/Web3-Secret-Storage-Definition).
+//! [EIP-2335](https://eips.ethereum.org/EIPS/eip-2335).
 
 use aes::{
     cipher::{self, InnerIvInit, KeyInit, StreamCipherCore},
@@ -15,11 +15,7 @@ use scrypt::{scrypt, Params as ScryptParams};
 use sha2::Sha256;
 use uuid::Uuid;
 
-use std::{
-    fs::File,
-    io::{Read, Write},
-    path::Path,
-};
+use std::{fs::File, path::Path};
 
 mod error;
 mod keystore;
@@ -58,18 +54,14 @@ where
 {
     // Read the file contents as string and deserialize it.
     let mut file = File::open(path)?;
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
-    decrypt_keystore(&contents, password)
+    let keystore = serde_json::from_reader(&mut file)?;
+    decrypt_keystore(keystore, password)
 }
 
-pub fn decrypt_keystore<S>(keystore_s: &str, password: S) -> Result<Vec<u8>, KeystoreError>
+pub fn decrypt_keystore<S>(keystore: EthKeystore, password: S) -> Result<Vec<u8>, KeystoreError>
 where
     S: AsRef<[u8]>,
 {
-    // Deserialize keystore string
-    let keystore: EthKeystore = serde_json::from_str(keystore_s)?;
-
     // Derive the key.
     let key = match keystore.crypto.kdf.params {
         KdfparamsType::Pbkdf2 {
@@ -154,6 +146,32 @@ where
     B: AsRef<[u8]>,
     S: AsRef<[u8]>,
 {
+    let keystore = encrypt_keystore(rng, pk, password)?;
+
+    let uuid = keystore.uuid.clone();
+    let name = if let Some(name) = name {
+        name.to_string()
+    } else {
+        uuid.clone()
+    };
+
+    // Create a file in write-only mode, to store the encrypted JSON keystore.
+    let mut file = File::create(dir.as_ref().join(name))?;
+    serde_json::to_writer(&mut file, &keystore)?;
+
+    Ok(uuid)
+}
+
+pub fn encrypt_keystore<R, B, S>(
+    rng: &mut R,
+    pk: B,
+    password: S,
+) -> Result<EthKeystore, KeystoreError>
+where
+    R: Rng + CryptoRng,
+    B: AsRef<[u8]>,
+    S: AsRef<[u8]>,
+{
     let bls_sk = match blst::min_pk::SecretKey::from_bytes(pk.as_ref()) {
         Ok(sk) => sk,
         Err(e) => return Err(KeystoreError::BLSError(e)),
@@ -189,14 +207,7 @@ where
         .chain(&ciphertext)
         .finalize();
 
-    // If a file name is not specified for the keystore, simply use the strigified uuid.
-    let uuid = Uuid::new_v4();
-    let name = if let Some(name) = name {
-        name.to_string()
-    } else {
-        uuid.to_string()
-    };
-
+    let uuid = Uuid::new_v4().to_string();
     let version = 4;
     let path = String::from(""); // Path is not currently derived
     let description = String::from("Version 4 BLS keystore");
@@ -229,16 +240,11 @@ where
         description,
         pubkey,
         path,
-        uuid: name.clone(),
+        uuid,
         version,
     };
-    let contents = serde_json::to_string(&keystore)?;
 
-    // Create a file in write-only mode, to store the encrypted JSON keystore.
-    let mut file = File::create(dir.as_ref().join(name))?;
-    file.write_all(contents.as_bytes())?;
-
-    Ok(uuid.to_string())
+    Ok(keystore)
 }
 
 struct Aes128Ctr {
