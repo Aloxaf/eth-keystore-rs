@@ -146,7 +146,7 @@ where
     B: AsRef<[u8]>,
     S: AsRef<[u8]>,
 {
-    let keystore = encrypt_keystore(rng, pk, password)?;
+    let keystore = encrypt_keystore(rng, pk, None::<&str>, password)?;
 
     let uuid = keystore.uuid.clone();
     let name = if let Some(name) = name {
@@ -162,23 +162,30 @@ where
     Ok(uuid)
 }
 
-pub fn encrypt_keystore<R, B, S>(
+pub fn encrypt_keystore<R, B, S, P>(
     rng: &mut R,
-    pk: B,
+    sk: B,
+    pk: Option<P>,
     password: S,
 ) -> Result<EthKeystore, KeystoreError>
 where
     R: Rng + CryptoRng,
     B: AsRef<[u8]>,
     S: AsRef<[u8]>,
+    P: AsRef<str>,
 {
-    let bls_sk = match blst::min_pk::SecretKey::from_bytes(pk.as_ref()) {
-        Ok(sk) => sk,
-        Err(e) => return Err(KeystoreError::BLSError(e)),
+    let pubkey = match pk {
+        Some(pk) => pk.as_ref().to_string(),
+        None => {
+            let bls_sk = match blst::min_pk::SecretKey::from_bytes(sk.as_ref()) {
+                Ok(sk) => sk,
+                Err(e) => return Err(KeystoreError::BLSError(e)),
+            };
+            let bls_pk = bls_sk.sk_to_pk().compress();
+            hex::encode(bls_pk)
+        }
     };
 
-    let bls_pk = bls_sk.sk_to_pk().compress();
-    let pubkey = hex::encode(bls_pk);
     // Generate a random salt.
     let mut salt = vec![0u8; DEFAULT_KEY_SIZE];
     rng.fill_bytes(salt.as_mut_slice());
@@ -198,7 +205,7 @@ where
 
     let encryptor = Aes128Ctr::new(&key[..16], &iv[..16]).expect("invalid length");
 
-    let mut ciphertext = pk.as_ref().to_vec();
+    let mut ciphertext = sk.as_ref().to_vec();
     encryptor.apply_keystream(&mut ciphertext);
 
     // Calculate the MAC.
